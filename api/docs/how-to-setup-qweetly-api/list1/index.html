@@ -105,15 +105,15 @@
             if (reasonMap[cleanReason]) {
                 formattedReason = reasonMap[cleanReason];
             } else {
-                formattedReason = reason.replace(/[-_]/g, ' ');
+                // If it's a regular word, replace dashes/underscores with spaces and capitalize words
+                formattedReason = reason.replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
             }
             
-            // Render the centered, colored, and capitalized heading reason
+            // Render the specific dynamic layout text
             const heading = document.getElementById('page-heading');
-            heading.textContent = formattedReason;
+            heading.textContent = `You've been declined because of ${formattedReason}`;
             heading.style.color = '#b30000'; 
-            heading.style.fontSize = '3rem'; // Make it large and prominent in the center
-            heading.style.textTransform = 'capitalize'; 
+            heading.style.fontSize = '2.5rem'; 
         }
     </script>
 </body>
