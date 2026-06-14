@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>QweetlyAPI – Uxidone Dashboard</title>
+    <title>QweetlyAPI – Uxidone</title>
     <style>
         body {
             text-align: center;
@@ -15,7 +15,7 @@
             margin: 0.5rem;
         }
         #loginPanel, #dashboard {
-            max-width: 500px;
+            max-width: 600px;
             margin: 0 auto;
             padding: 1rem;
             border-radius: 12px;
@@ -23,157 +23,294 @@
         }
         #dashboard {
             background: #e8f0fe;
+            display: none;
         }
-        .editable {
-            margin-top: 1rem;
-            padding: 1rem;
+        .card {
             background: white;
             border-radius: 8px;
-            border: 1px solid #ccc;
-        }
-        textarea {
-            width: 90%;
-            height: 80px;
-            font-family: monospace;
-            margin-top: 0.5rem;
-        }
-        .percent {
-            font-size: 2rem;
-            font-weight: bold;
+            padding: 1rem;
             margin: 1rem 0;
+            text-align: left;
         }
-        progress {
-            width: 80%;
-            height: 20px;
+        code {
+            background: #e0e0e0;
+            padding: 0.2rem 0.4rem;
+            border-radius: 4px;
         }
         #message {
             margin-top: 1rem;
             font-weight: bold;
+            color: #d32f2f;
         }
-        hr {
-            margin: 2rem auto;
-            width: 50%;
+        .error-detail {
+            font-size: 0.85rem;
+            color: #555;
+            margin-top: 0.3rem;
         }
-        .note {
-            font-size: 0.8rem;
-            color: gray;
-            margin-top: 2rem;
+        .warning {
+            color: #e67e22;
         }
     </style>
 </head>
 <body>
 
 <div id="loginPanel">
-    <h1>QweetlyAPI – Uxidone</h1>
+    <h1>🔐 QweetlyAPI – Uxidone</h1>
     <p>Enter your password</p>
-    <input type="password" id="password" autocomplete="off">
+    <input type="password" id="password" autocomplete="off" maxlength="128">
     <br>
     <button id="loginBtn">Login</button>
     <div id="message"></div>
 </div>
 
-<div id="dashboard" style="display:none;">
-    <h2>✨ Dashboard ✨</h2>
-    <!-- ================================================== -->
-    <!-- YOU CAN MANUALLY EDIT EVERYTHING BELOW              -->
-    <!-- ================================================== -->
-    <div class="editable">
-        <strong>Hello, Uxidone!</strong><br>
-        <em>Welcome back to QweetlyAPI.</em>
+<div id="dashboard">
+    <h2>✨ Welcome, Uxidone ✨</h2>
+    <div class="card">
+        <h3>🔑 Your API Key</h3>
+        <p><code id="apiKeyDisplay">loading...</code></p>
     </div>
-
-    <div class="editable">
-        <strong>📝 Other stuff (edit me manually in HTML):</strong><br>
-        <textarea id="otherStuff" rows="3">You can put any notes, stats, or messages here. This text is editable directly in the HTML file.</textarea>
-        <br><small>✏️ Change this text by editing the <code>&lt;textarea&gt;</code> value in the source code.</small>
+    <div class="card">
+        <h3>📌 Allowed Types</h3>
+        <ul id="typesList"></ul>
+        <p><strong>Command format:</strong><br>
+        <code>api-key qweetlyapi-{a-z0-9} type={type}</code></p>
+        <p><em>Example:</em><br>
+        <code>api-key qweetlyapi-ux1d0ne2026 type=read</code></p>
     </div>
-
-    <div class="editable">
-        <strong>📊 Percentage indicator (manual edit):</strong><br>
-        <div class="percent" id="percentValue">75%</div>
-        <progress id="percentBar" value="75" max="100"></progress>
-        <br><small>💡 To change the percentage, edit the <code>value</code> attributes above (both the text and the progress bar).</small>
-    </div>
-
     <button id="logoutBtn">Logout</button>
-    <div class="note">
-        🔐 Everything you see here is static HTML. Edit the file manually to change messages, percentages, or any content.
-    </div>
 </div>
 
 <script>
-    // ---------- FIXED ENCRYPTION KEY (must match the one used to create /account/uxidone/index.json) ----------
-    const KEY_BASE64 = '3Z7vQ9wE5rT8yU1iOpLkMnBvCxZAsDfGhJklQwErTyU=';
+    // ============================================================
+    // JSON-ONLY LOGIN WITH EXTREME ERROR HANDLING
+    // ============================================================
 
-    async function decryptPassword(ivBase64, dataBase64) {
-        const iv = Uint8Array.from(atob(ivBase64), c => c.charCodeAt(0));
-        const encrypted = Uint8Array.from(atob(dataBase64), c => c.charCodeAt(0));
-        const keyBytes = Uint8Array.from(atob(KEY_BASE64), c => c.charCodeAt(0));
-        const key = await crypto.subtle.importKey('raw', keyBytes, 'AES-GCM', true, ['decrypt']);
-        const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, encrypted);
-        return new TextDecoder().decode(decrypted);
+    const JSON_URL = 'https://api.qweetly.work.gd/account/uxidone/index.json';
+
+    // Rate limiting simulation
+    let failedAttempts = 0;
+    const MAX_FAILED = 5;
+    const LOCKOUT_MS = 30000; // 30 seconds
+    let lockUntil = null;
+
+    function isLockedOut() {
+        if (lockUntil && Date.now() < lockUntil) return true;
+        return false;
+    }
+
+    function recordFailed() {
+        failedAttempts++;
+        if (failedAttempts >= MAX_FAILED) {
+            lockUntil = Date.now() + LOCKOUT_MS;
+            failedAttempts = 0;
+        }
+    }
+
+    function resetLockout() {
+        failedAttempts = 0;
+        lockUntil = null;
     }
 
     async function attemptLogin(typedPassword) {
         const msgDiv = document.getElementById('message');
-        msgDiv.innerText = '⏳ Verifying...';
+        msgDiv.innerHTML = ''; // clear previous
+
+        // ----- Input validation -----
+        if (typedPassword === undefined || typedPassword === null) {
+            msgDiv.innerHTML = '❌ Internal error: No password provided.';
+            return;
+        }
+        if (typedPassword === '') {
+            msgDiv.innerHTML = '❌ Please enter a password.';
+            return;
+        }
+        if (typedPassword.length > 128) {
+            msgDiv.innerHTML = '❌ Password too long (max 128 characters).';
+            return;
+        }
+        if (typedPassword.length < 4) {
+            msgDiv.innerHTML = '❌ Password too short (min 4 characters).';
+            return;
+        }
+
+        // ----- Rate limiting -----
+        if (isLockedOut()) {
+            const remaining = Math.ceil((lockUntil - Date.now()) / 1000);
+            msgDiv.innerHTML = `❌ Too many failed attempts. Please wait ${remaining} seconds.`;
+            return;
+        }
+
+        msgDiv.innerHTML = '⏳ Checking credentials...';
+
+        // ----- Fetch with timeout -----
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 sec timeout
+
         try {
-            const response = await fetch('https://api.qweetly.work.gd/account/uxidone/index.json');
-            if (!response.ok) throw new Error('Account file not found. Did you upload /account/uxidone/index.json?');
-            const account = await response.json();
-            const storedPassword = await decryptPassword(account.encryptedPassword.iv, account.encryptedPassword.data);
-            if (typedPassword === storedPassword) {
-                // Success: show dashboard, hide login panel
+            let response;
+            try {
+                response = await fetch(JSON_URL, { signal: controller.signal });
+                clearTimeout(timeoutId);
+            } catch (fetchErr) {
+                clearTimeout(timeoutId);
+                if (fetchErr.name === 'AbortError') {
+                    msgDiv.innerHTML = '❌ Request timed out (15 seconds). Server is slow or unreachable.';
+                } else if (fetchErr.message.includes('Failed to fetch') || fetchErr.message.includes('NetworkError')) {
+                    msgDiv.innerHTML = '❌ Network error: Cannot reach the server.<br><span class="error-detail">Possible causes: offline, wrong domain, or CORS not configured.</span>';
+                } else {
+                    msgDiv.innerHTML = '❌ Fetch error: ' + fetchErr.message;
+                }
+                recordFailed();
+                return;
+            }
+
+            // ----- HTTP status exhaustive -----
+            if (response.status === 404) {
+                msgDiv.innerHTML = `❌ Account file not found (404). Expected URL: <code>${JSON_URL}</code><br>Please create <code>/account/uxidone/index.json</code> in your repository.`;
+                recordFailed();
+                return;
+            }
+            if (response.status === 403) {
+                msgDiv.innerHTML = '❌ Access forbidden (403). The server is blocking access. Check file permissions.';
+                recordFailed();
+                return;
+            }
+            if (response.status === 401) {
+                msgDiv.innerHTML = '❌ Unauthorized (401). Authentication required for this resource.';
+                recordFailed();
+                return;
+            }
+            if (response.status === 429) {
+                msgDiv.innerHTML = '❌ Too many requests (429). Please slow down.';
+                recordFailed();
+                return;
+            }
+            if (response.status >= 500 && response.status < 600) {
+                msgDiv.innerHTML = `❌ Server error (${response.status}). Please try again later.`;
+                recordFailed();
+                return;
+            }
+            if (!response.ok) {
+                msgDiv.innerHTML = `❌ HTTP error ${response.status}: ${response.statusText}`;
+                recordFailed();
+                return;
+            }
+
+            // ----- Check content type -----
+            const contentType = response.headers.get('content-type');
+            if (contentType && !contentType.includes('application/json')) {
+                msgDiv.innerHTML = `❌ Invalid content-type: expected JSON, got ${contentType}. The file may be HTML or plain text.`;
+                recordFailed();
+                return;
+            }
+
+            // ----- Parse JSON with size check -----
+            const text = await response.text();
+            if (text.length === 0) {
+                msgDiv.innerHTML = '❌ The account file is empty (0 bytes). Please provide valid JSON.';
+                recordFailed();
+                return;
+            }
+            if (text.length > 1024 * 1024) { // 1MB limit
+                msgDiv.innerHTML = '❌ Account file is too large (>1MB). This is likely a mistake.';
+                recordFailed();
+                return;
+            }
+
+            let account;
+            try {
+                account = JSON.parse(text);
+            } catch (jsonErr) {
+                msgDiv.innerHTML = `❌ Invalid JSON syntax.<br><span class="error-detail">${jsonErr.message}</span><br>First 100 chars: ${text.substring(0, 100)}`;
+                recordFailed();
+                return;
+            }
+
+            // ----- Validate account object -----
+            if (typeof account !== 'object' || account === null) {
+                msgDiv.innerHTML = `❌ Account data is not a JSON object (type: ${typeof account}). Expected { ... }.`;
+                recordFailed();
+                return;
+            }
+
+            // Check required fields
+            if (!account.hasOwnProperty('password')) {
+                msgDiv.innerHTML = '❌ JSON missing required field "password".';
+                recordFailed();
+                return;
+            }
+            if (typeof account.password !== 'string') {
+                msgDiv.innerHTML = `❌ "password" field must be a string, got ${typeof account.password}.`;
+                recordFailed();
+                return;
+            }
+            if (account.password.length === 0) {
+                msgDiv.innerHTML = '❌ "password" field is empty.';
+                recordFailed();
+                return;
+            }
+
+            // Optional fields warnings (but allow login)
+            if (!account.username) {
+                msgDiv.innerHTML += '<br><span class="warning">⚠️ Warning: "username" field missing. Expected "Uxidone".</span>';
+            } else if (account.username !== 'Uxidone') {
+                msgDiv.innerHTML += `<br><span class="warning">⚠️ Warning: Username mismatch. Expected "Uxidone", got "${account.username}".</span>`;
+            }
+            if (!account.apiKey) {
+                msgDiv.innerHTML += '<br><span class="warning">⚠️ Warning: "apiKey" field missing. Will display "not set".</span>';
+            }
+            if (!account.allowedTypes || !Array.isArray(account.allowedTypes)) {
+                msgDiv.innerHTML += '<br><span class="warning">⚠️ Warning: "allowedTypes" missing or not an array. No types will be shown.</span>';
+            }
+
+            // ----- Compare password -----
+            if (typedPassword === account.password) {
+                // Success – clear lockout and show dashboard
+                resetLockout();
                 document.getElementById('loginPanel').style.display = 'none';
                 document.getElementById('dashboard').style.display = 'block';
-                msgDiv.innerText = '';
+                // Populate dashboard from JSON
+                document.getElementById('apiKeyDisplay').innerText = account.apiKey || 'not set';
+                const typesList = document.getElementById('typesList');
+                typesList.innerHTML = '';
+                if (account.allowedTypes && Array.isArray(account.allowedTypes)) {
+                    account.allowedTypes.forEach(type => {
+                        const li = document.createElement('li');
+                        li.innerHTML = `<code>type=${type}</code>`;
+                        typesList.appendChild(li);
+                    });
+                } else {
+                    typesList.innerHTML = '<li>No types defined</li>';
+                }
+                msgDiv.innerHTML = ''; // clear any warnings
             } else {
-                msgDiv.innerText = '❌ Wrong password';
+                msgDiv.innerHTML = '❌ Wrong password.';
+                recordFailed();
             }
+
         } catch (err) {
-            msgDiv.innerText = '❌ Error: ' + err.message;
+            clearTimeout(timeoutId);
+            msgDiv.innerHTML = `❌ Unexpected error: ${err.message}<br><span class="error-detail">Check console for details.</span>`;
             console.error(err);
+            recordFailed();
         }
     }
 
+    // ----- Event listeners -----
     document.getElementById('loginBtn').addEventListener('click', () => {
         const pw = document.getElementById('password').value;
-        if (!pw) {
-            document.getElementById('message').innerText = '❌ Please enter a password';
-            return;
-        }
         attemptLogin(pw);
     });
-
     document.getElementById('password').addEventListener('keypress', (e) => {
         if (e.key === 'Enter') document.getElementById('loginBtn').click();
     });
-
     document.getElementById('logoutBtn').addEventListener('click', () => {
         document.getElementById('loginPanel').style.display = 'block';
         document.getElementById('dashboard').style.display = 'none';
         document.getElementById('password').value = '';
-        document.getElementById('message').innerText = '';
+        document.getElementById('message').innerHTML = '';
+        resetLockout();
     });
 </script>
-
-<!-- 
-    ============================================================
-    MANUAL INSTRUCTIONS FOR YOU (THE DEVELOPER):
-    ============================================================
-    1. Make sure the encrypted account file exists at:
-       https://api.qweetly.work.gd/account/uxidone/index.json
-       (Use the generate-account.html tool from previous message to create it.)
-
-    2. Edit the dashboard content directly in this HTML:
-       - Change "Hello, Uxidone!" and the message below.
-       - Change the <textarea> content for "other stuff".
-       - Change the percentage number (currently 75) in TWO places:
-         a) The text inside <span id="percentValue">75%</span>
-         b) The value="75" attribute of the <progress> tag.
-
-    3. Host this HTML anywhere (GitHub Pages, local, etc.) and use it as your login page.
-    ============================================================
--->
 </body>
 </html>
