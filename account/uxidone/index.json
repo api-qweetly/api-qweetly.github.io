@@ -1,7 +1,9 @@
 {
   "username": "Uxidone",
   "encryptedPassword": {
-    "iv": "ds4gY/9f9isnPy4B",
-    "data": "799KS9wN7TH3b4v+xfI95LKBbrVaTXXIAe4PbBBPaMsTwxESn2D5"
-  }
+    "iv": "EImUIkSu5xfgEnNe",
+    "data": "5JjRS3diXLt7SrE+hcMfOGPXQnjV4xXWasUAwsqQpkzGDYDw5Du5"
+  },
+  "apiKey": "qweetlyapi-ux1d0ne2026",
+  "allowedTypes": ["read", "write", "admin", "stats", "generate"]
 }
