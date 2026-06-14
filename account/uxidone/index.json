@@ -1,17 +1,7 @@
-(async () => {
-  const KEY_BASE64 = '3Z7vQ9wE5rT8yU1iOpLkMnBvCxZAsDfGhJklQwErTyU=';
-  const password = 'ux1d0neaccd3v2994928384';
-  const encoder = new TextEncoder();
-  const keyBytes = Uint8Array.from(atob(KEY_BASE64), c => c.charCodeAt(0));
-  const key = await crypto.subtle.importKey('raw', keyBytes, 'AES-GCM', true, ['encrypt']);
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const encrypted = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, encoder.encode(password));
-  const account = {
-    username: "Uxidone",
-    encryptedPassword: {
-      iv: btoa(String.fromCharCode(...iv)),
-      data: btoa(String.fromCharCode(...new Uint8Array(encrypted)))
-    }
-  };
-  console.log(JSON.stringify(account, null, 2));
-})();
+{
+  "username": "Uxidone",
+  "encryptedPassword": {
+    "iv": "ds4gY/9f9isnPy4B",
+    "data": "799KS9wN7TH3b4v+xfI95LKBbrVaTXXIAe4PbBBPaMsTwxESn2D5"
+  }
+}
